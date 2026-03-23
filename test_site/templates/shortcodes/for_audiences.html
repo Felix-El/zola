@@ -1,0 +1,9 @@
+{% if not config.audiences %}
+{{ body }}
+{% else %}
+  {% set show = false %}
+  {% for a in any %}
+    {% if a in config.audiences %}{% set_global show = true %}{% endif %}
+  {% endfor %}
+  {% if show %}{{ body }}{% endif %}
+{% endif %}

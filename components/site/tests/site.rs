@@ -22,7 +22,8 @@ fn can_parse_site() {
     let library = site.library.read().unwrap();
 
     // Correct number of pages (sections do not count as pages, draft are ignored)
-    assert_eq!(library.pages.len(), 36);
+    // 36 original + 3 audiences_test pages + 1 internal_sub page + 1 no_audience_sub page = 41
+    assert_eq!(library.pages.len(), 41);
     let posts_path = path.join("content").join("posts");
 
     // Make sure the page with a url doesn't have any sections
@@ -35,11 +36,12 @@ fn can_parse_site() {
     assert_eq!(asset_folder_post.file.components, vec!["posts".to_string()]);
 
     // That we have the right number of sections
-    assert_eq!(library.sections.len(), 13);
+    // 13 original + 1 audiences_test + 1 internal_sub + 1 no_audience_sub = 16
+    assert_eq!(library.sections.len(), 16);
 
     // And that the sections are correct
     let index_section = library.sections.get(&path.join("content").join("_index.md")).unwrap();
-    assert_eq!(index_section.subsections.len(), 5);
+    assert_eq!(index_section.subsections.len(), 6); // 5 original + 1 audiences_test
     assert_eq!(index_section.pages.len(), 5);
     assert!(index_section.ancestors.is_empty());
 
@@ -284,8 +286,9 @@ fn can_build_site_with_live_reload_and_drafts() {
     assert!(file_contains!(public, "sitemap.xml", "draft"));
 
     // drafted sections are included
+    // 13 original + 1 audiences_test + 1 internal_sub + 1 no_audience_sub + 1 draft = 18
     let library = site.library.read().unwrap();
-    assert_eq!(library.sections.len(), 15);
+    assert_eq!(library.sections.len(), 18);
 
     assert!(file_exists!(public, "secret_section/index.html"));
     assert!(file_exists!(public, "secret_section/draft-page/index.html"));
@@ -944,4 +947,179 @@ fn can_find_site_and_page_authors() {
 // Follows test_site/themes/sample/templates/current_path.html
 fn current_path(path: &str) -> String {
     format!("[current_path]({})", path)
+}
+
+#[test]
+fn can_filter_pages_by_audiences_public_only() {
+    let mut path = env::current_dir().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
+    path.push("test_site");
+    let config_file = path.join("config.audiences.public.toml");
+    let mut site = Site::new(&path, &config_file).unwrap();
+    site.load().unwrap();
+    let library = site.library.read().unwrap();
+
+    let audiences_path = path.join("content").join("audiences_test");
+
+    // Section with audiences = ["public", "internal"] is included (overlaps on "public")
+    let audience_section = library.sections.get(&audiences_path.join("_index.md"));
+    assert!(
+        audience_section.is_some(),
+        "Section should exist because it has audiences = [\"public\", \"internal\"]"
+    );
+    assert_eq!(
+        audience_section.unwrap().pages.len(),
+        2,
+        "Should have 2 pages: public-page and shared-page"
+    );
+
+    // Pages with matching audience are included
+    assert!(library.pages.contains_key(&audiences_path.join("public-page.md")));
+    assert!(library.pages.contains_key(&audiences_path.join("shared-page.md")));
+
+    // Pages with non-matching audience are excluded
+    assert!(!library.pages.contains_key(&audiences_path.join("internal-page.md")));
+
+    // Sections with non-matching audience are entirely excluded (skip_current_dir cascades)
+    let internal_sub_path = audiences_path.join("internal_sub");
+    assert!(
+        !library.sections.contains_key(&internal_sub_path.join("_index.md")),
+        "Internal-only subsection should be filtered out"
+    );
+    assert!(
+        !library.pages.contains_key(&internal_sub_path.join("sub-page.md")),
+        "Pages inside an excluded section should not be present"
+    );
+
+    // Pages without audiences set are filtered when config has audiences
+    let posts_path = path.join("content").join("posts");
+    assert!(
+        !library.pages.contains_key(&posts_path.join("simple.md")),
+        "Pages without audiences should be filtered when config has audiences"
+    );
+
+    // Sections with no audiences field are excluded, and their pages are too
+    let no_audience_sub_path = audiences_path.join("no_audience_sub");
+    assert!(
+        !library.sections.contains_key(&no_audience_sub_path.join("_index.md")),
+        "Section without audiences should be filtered out when config has audiences"
+    );
+    assert!(
+        !library.pages.contains_key(&no_audience_sub_path.join("orphan-page.md")),
+        "Pages inside a section with no audiences should also be excluded"
+    );
+}
+
+#[test]
+fn can_filter_pages_by_audiences_public_and_internal() {
+    let mut path = env::current_dir().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
+    path.push("test_site");
+    let config_file = path.join("config.audiences.internal.toml");
+    let mut site = Site::new(&path, &config_file).unwrap();
+    site.load().unwrap();
+    let library = site.library.read().unwrap();
+
+    let audiences_path = path.join("content").join("audiences_test");
+
+    // Main section is included
+    let audience_section = library.sections.get(&audiences_path.join("_index.md"));
+    assert!(audience_section.is_some(), "Section should exist");
+    assert_eq!(audience_section.unwrap().pages.len(), 3, "Should have 3 pages: all of them");
+
+    // All explicitly-audienced pages are included when config overlaps with all of them
+    assert!(library.pages.contains_key(&audiences_path.join("public-page.md")));
+    assert!(library.pages.contains_key(&audiences_path.join("shared-page.md")));
+    assert!(library.pages.contains_key(&audiences_path.join("internal-page.md")));
+
+    // Sections with matching audience are included along with their pages
+    let internal_sub_path = audiences_path.join("internal_sub");
+    assert!(
+        library.sections.contains_key(&internal_sub_path.join("_index.md")),
+        "Internal subsection should be included when config includes \"internal\""
+    );
+    assert!(
+        library.pages.contains_key(&internal_sub_path.join("sub-page.md")),
+        "Pages inside an included section should be present"
+    );
+
+    // Sections with no audiences field are still excluded even when config has broad audiences
+    let no_audience_sub_path = audiences_path.join("no_audience_sub");
+    assert!(
+        !library.sections.contains_key(&no_audience_sub_path.join("_index.md")),
+        "Section without audiences should be filtered out regardless of config"
+    );
+    assert!(
+        !library.pages.contains_key(&no_audience_sub_path.join("orphan-page.md")),
+        "Pages inside a no-audiences section should also be excluded"
+    );
+}
+
+#[test]
+fn can_render_config_audiences_in_template() {
+    use tempfile::tempdir;
+
+    let mut path = env::current_dir().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
+    path.push("test_site");
+    let config_file = path.join("config.audiences.public.toml");
+    let mut site = Site::new(&path, &config_file).unwrap();
+    site.load().unwrap();
+    let tmp_dir = tempdir().expect("create temp dir");
+    let public = &tmp_dir.path().join("public");
+    site.set_output_path(public);
+    site.build().expect("Couldn't build the site");
+
+    // The audiences_section.html template renders config.audiences via
+    // `{{ config.audiences | join(sep=",") }}`. With config.audiences = ["public"],
+    // the rendered output should contain "config-audiences:public".
+    assert!(file_contains!(public, "audiences_test/index.html", "config-audiences:public"));
+
+    // The audiences_info.html shortcode (invoked from public-page.md) also renders
+    // config.audiences — verifying shortcodes receive the same serialized config.
+    assert!(file_contains!(public, "audiences_test/public-page/index.html", "sc-audiences:public"));
+
+    // The for_audiences bodied shortcode shows/hides body based on audience overlap.
+    // With config.audiences = ["public"], the public block is visible and internal is not.
+    assert!(file_contains!(
+        public,
+        "audiences_test/public-page/index.html",
+        "sc-body-public-visible"
+    ));
+    assert!(!file_contains!(
+        public,
+        "audiences_test/public-page/index.html",
+        "sc-body-internal-visible"
+    ));
+
+    // Verify the internal-only config also exposes its audiences to templates
+    let config_file_internal = path.join("config.audiences.internal.toml");
+    let mut site2 = Site::new(&path, &config_file_internal).unwrap();
+    site2.load().unwrap();
+    let tmp_dir2 = tempdir().expect("create temp dir");
+    let public2 = &tmp_dir2.path().join("public");
+    site2.set_output_path(public2);
+    site2.build().expect("Couldn't build the site");
+
+    assert!(file_contains!(
+        public2,
+        "audiences_test/index.html",
+        "config-audiences:internal,public"
+    ));
+
+    // Same shortcode check for the broader audience config
+    assert!(file_contains!(
+        public2,
+        "audiences_test/public-page/index.html",
+        "sc-audiences:internal,public"
+    ));
+
+    // With config.audiences = ["internal", "public"], both blocks are visible.
+    assert!(file_contains!(
+        public2,
+        "audiences_test/public-page/index.html",
+        "sc-body-public-visible"
+    ));
+    assert!(file_contains!(
+        public2,
+        "audiences_test/public-page/index.html",
+        "sc-body-internal-visible"
+    ));
 }

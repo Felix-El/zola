@@ -11,7 +11,11 @@ in the [docs/content](docs/content) folder of this repository or visit the [Zola
 This tool and its template engine [tera](https://keats.github.io/tera/) were born from an intense dislike of the (insane) Golang template engine and therefore of
 Hugo that I was using before for 6+ sites.
 
-## List of features
+# Features of the Markdown-output fork
+
+- [Audience filtering](docs\content\documentation\content\audiences.md)
+
+# List of features
 
 - [Single binary](https://www.getzola.org/documentation/getting-started/cli-usage/)
 - [Syntax highlighting](https://www.getzola.org/documentation/content/syntax-highlighting/)

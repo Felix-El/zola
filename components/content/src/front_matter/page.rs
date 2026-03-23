@@ -55,6 +55,8 @@ pub struct PageFrontMatter {
     pub weight: Option<usize>,
     /// The authors of the page.
     pub authors: Vec<String>,
+    /// The audiences for this page. Used for audience-based filtering.
+    pub audiences: Option<Vec<String>>,
     /// All aliases for that page. Zola will create HTML templates that will
     /// redirect to this
     #[serde(skip_serializing)]
@@ -162,6 +164,7 @@ impl Default for PageFrontMatter {
             taxonomies: HashMap::new(),
             weight: None,
             authors: Vec::new(),
+            audiences: None,
             aliases: Vec::new(),
             template: None,
             extra: Map::new(),

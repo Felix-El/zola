@@ -88,6 +88,13 @@ hard_link_static = false
 # The default author for pages
 author =
 
+# The active audiences for this build. When set, only pages and sections whose `audiences`
+# front matter overlaps this list will be included. When not set (the default), all content
+# is included regardless of front matter audiences.
+# Example: audiences = ["public"]
+# See the [audiences documentation](@/documentation/content/audiences.md) for details.
+# audiences = []
+
 # The taxonomies to be rendered for the site and their configuration of the default languages
 # Example:
 #     taxonomies = [

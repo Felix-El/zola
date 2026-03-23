@@ -71,6 +71,8 @@ pub struct Config {
     pub taxonomy_root: Option<String>,
     /// The default author for pages.
     pub author: Option<String>,
+    /// The list of audiences enabled for this site. If set, pages and sections are filtered by audience.
+    pub audiences: Option<Vec<String>>,
 
     /// Whether to compile the `sass` directory and output the css files into the static folder
     pub compile_sass: bool,
@@ -129,6 +131,7 @@ pub struct SerializedConfig<'a> {
     feed_filenames: &'a [String],
     taxonomies: &'a [taxonomies::TaxonomyConfig],
     author: &'a Option<String>,
+    audiences: &'a Option<Vec<String>>,
     build_search_index: bool,
     extra: &'a HashMap<String, Toml>,
     markdown: &'a markup::Markdown,
@@ -359,6 +362,7 @@ impl Config {
             feed_filenames: &options.feed_filenames,
             taxonomies: &options.taxonomies,
             author: &self.author,
+            audiences: &self.audiences,
             build_search_index: options.build_search_index,
             extra: &self.extra,
             markdown: &self.markdown,
@@ -418,6 +422,7 @@ impl Default for Config {
             taxonomies: Vec::new(),
             taxonomy_root: None,
             author: None,
+            audiences: None,
             compile_sass: false,
             minify_html: false,
             mode: Mode::Build,

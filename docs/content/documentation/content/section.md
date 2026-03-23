@@ -54,6 +54,13 @@ description = ""
 # A draft section is only loaded if the `--drafts` flag is passed to `zola build`, `zola serve` or `zola check`.
 draft = false
 
+# The audiences this section targets. When `config.audiences` is set, only sections
+# whose audience list overlaps the config audiences will be included in the build.
+# Sections with no audiences set are excluded when config audiences are active.
+# Exclusion applies to the entire subtree of the section.
+# The root section is always included regardless of this setting.
+audiences = []
+
 # Used to sort pages by "date", "update_date", "title", "title_bytes", "weight", "slug" or "none". See below for more information.
 sort_by = "none"
 

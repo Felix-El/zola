@@ -181,6 +181,35 @@ impl Site {
         self.config.minify_html = true;
     }
 
+    /// Returns true if the page/section should be included based on the configured audiences.
+    /// If config.audiences is None, always returns true (audiences feature is disabled).
+    /// If config.audiences is Some and item_audiences is None, logs a warning and returns false.
+    /// If config.audiences is Some and item_audiences is Some, returns true only if there's overlapping audiences.
+    fn should_include_by_audiences(
+        &self,
+        item_audiences: &Option<Vec<String>>,
+        item_path: &Path,
+    ) -> bool {
+        let config_audiences = match &self.config.audiences {
+            None => return true, // audiences feature is disabled
+            Some(audiences) => audiences,
+        };
+
+        match item_audiences {
+            None => {
+                log::warn!(
+                    "Skipping {} because audiences not assigned but config.audiences is set",
+                    item_path.display()
+                );
+                false
+            }
+            Some(item_auds) => {
+                // Check if there's any overlap between config audiences and item audiences
+                item_auds.iter().any(|aud| config_audiences.contains(aud))
+            }
+        }
+    }
+
     /// Reads all .md files in the `content` directory and create pages/sections
     /// out of them
     pub fn load(&mut self) -> Result<()> {
@@ -273,6 +302,19 @@ impl Site {
                         continue;
                     }
 
+                    // Check if section should be included based on audiences.
+                    // The root section (content/_index.md) is exempt: it has no file
+                    // components and never carries audience front matter.
+                    if !section.file.components.is_empty()
+                        && !self.should_include_by_audiences(
+                            &section.meta.audiences,
+                            &section.file.path,
+                        )
+                    {
+                        dir_walker.skip_current_dir();
+                        continue;
+                    }
+
                     self.add_section(section, false)?;
                 }
             } else {
@@ -285,6 +327,11 @@ impl Site {
         for page in pages {
             // should we skip drafts?
             if page.meta.draft && !self.include_drafts {
+                continue;
+            }
+
+            // Check if page should be included based on audiences
+            if !self.should_include_by_audiences(&page.meta.audiences, &page.file.path) {
                 continue;
             }
 

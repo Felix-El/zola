@@ -1,0 +1,6 @@
+<!DOCTYPE html>
+<html>
+<body>
+config-audiences:{% if config.audiences %}{{ config.audiences | join(sep=",") }}{% else %}none{% endif %}
+</body>
+</html>

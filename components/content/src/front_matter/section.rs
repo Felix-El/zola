@@ -63,6 +63,8 @@ pub struct SectionFrontMatter {
     /// Optional template for all pages in this section (including the pages of children section)
     #[serde(skip_serializing)]
     pub page_template: Option<String>,
+    /// The audiences for this section. Used for audience-based filtering.
+    pub audiences: Option<Vec<String>>,
     /// All aliases for that page. Zola will create HTML templates that will
     /// redirect to this
     #[serde(skip_serializing)]
@@ -112,6 +114,7 @@ impl Default for SectionFrontMatter {
             in_search_index: true,
             transparent: false,
             page_template: None,
+            audiences: None,
             aliases: Vec::new(),
             generate_feeds: false,
             extra: Map::new(),
