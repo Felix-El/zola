@@ -3,7 +3,7 @@
 [![Build Status](https://dev.azure.com/getzola/zola/_apis/build/status/getzola.zola?branchName=master)](https://dev.azure.com/getzola/zola/_build/latest?definitionId=1&branchName=master)
 ![GitHub all releases](https://img.shields.io/github/downloads/getzola/zola/total)
 
-A fast static site generator in a single binary with everything built-in.
+[A Markdown-output fork of] a fast static site generator in a single binary with everything built-in.
 
 To find out more see the [Zola Documentation](https://www.getzola.org/documentation/getting-started/overview/), look
 in the [docs/content](docs/content) folder of this repository or visit the [Zola community forum](https://zola.discourse.group).
