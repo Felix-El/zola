@@ -26,12 +26,19 @@ impl Shortcode {
     /// Attempts to fill the `tera_name` field from the provided definitions for self and all of self.inner.
     ///
     /// This returns an error if the definitions do not have this shortcode.
+    /// When `prefer_md` is true (render-md mode) and the definition has a `.md` variant, that
+    /// variant's template name is used so the shortcode renders as markdown.
     pub fn fill_tera_name(
         &mut self,
         definitions: &HashMap<String, ShortcodeDefinition>,
+        prefer_md: bool,
     ) -> Result<()> {
         if let Some(def) = definitions.get(&self.name) {
-            self.tera_name = def.tera_name.clone();
+            self.tera_name = if prefer_md {
+                def.md_tera_name.as_deref().unwrap_or(&def.tera_name).to_string()
+            } else {
+                def.tera_name.clone()
+            };
         } else {
             return Err(errors::anyhow!(
                 "Found usage of a shortcode named `{}` but we do not know about. Make sure it's not a typo and that a field name `{}.{{html,md}}` exists in the `templates/shortcodes` directory.",
@@ -40,7 +47,7 @@ impl Shortcode {
             ));
         }
         for inner_sc in self.inner.iter_mut() {
-            inner_sc.fill_tera_name(definitions)?;
+            inner_sc.fill_tera_name(definitions, prefer_md)?;
         }
         Ok(())
     }

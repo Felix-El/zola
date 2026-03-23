@@ -51,6 +51,21 @@ pub fn build_site(name: &str) -> (Site, TempDir, PathBuf) {
     (site, tmp_dir, public.clone())
 }
 
+/// Runs `render-md` mode on the named test site and returns the site, temp dir, and output path.
+pub fn render_md_site(name: &str) -> (Site, TempDir, PathBuf) {
+    let mut path = env::current_dir().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
+    path.push(name);
+    let config_file = path.join("config.toml");
+    let mut site = Site::new(&path, &config_file).unwrap();
+    let tmp_dir = tempdir().expect("create temp dir");
+    let md_out = tmp_dir.path().join("md");
+    site.set_output_path(&md_out);
+    site.enable_render_md_mode();
+    site.load().unwrap();
+    site.build().expect("Couldn't render md site");
+    (site, tmp_dir, md_out)
+}
+
 /// Same as `build_site` but has a hook to setup some config options
 pub fn build_site_with_setup<F>(name: &str, mut setup_cb: F) -> (Site, TempDir, PathBuf)
 where

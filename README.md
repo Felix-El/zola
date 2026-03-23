@@ -14,6 +14,10 @@ Hugo that I was using before for 6+ sites.
 # Features of the Markdown-output fork
 
 - [Audience filtering](docs\content\documentation\content\audiences.md)
+- Markdown output: `zola render-md` generates Markdown filesets
+  - internal links are made relative
+  - many of the features of Zola known from HTML building work, i.e.
+    asset co-location, image processing, themes, shortcodes, internal links, external links, ToC generation, taxonomies
 
 # List of features
 

@@ -122,6 +122,17 @@ pub enum Command {
         skip_external_links: bool,
     },
 
+    /// Render the site content as processed Markdown, mirroring the content directory structure
+    RenderMd {
+        /// Output directory for the rendered Markdown files (defaults to 'md' in project root)
+        #[clap(short = 'o', long)]
+        output_dir: Option<PathBuf>,
+
+        /// Include drafts when loading the site
+        #[clap(long)]
+        drafts: bool,
+    },
+
     /// Generate shell completion
     Completion {
         /// Shell to generate completion for

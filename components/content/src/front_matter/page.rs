@@ -64,6 +64,9 @@ pub struct PageFrontMatter {
     /// Specify a template different from `page.html` to use for that page
     #[serde(skip_serializing)]
     pub template: Option<String>,
+    /// Specify a template different from `page.md` to use for that page when rendering as Markdown
+    #[serde(skip_serializing)]
+    pub md_template: Option<String>,
     /// Whether the page is included in the search index
     /// Defaults to `true` but is only used if search if explicitly enabled in the config.
     #[serde(skip_serializing)]
@@ -167,6 +170,7 @@ impl Default for PageFrontMatter {
             audiences: None,
             aliases: Vec::new(),
             template: None,
+            md_template: None,
             extra: Map::new(),
         }
     }

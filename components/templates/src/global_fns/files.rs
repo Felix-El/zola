@@ -29,6 +29,7 @@ where
 #[derive(Debug)]
 pub struct GetUrl {
     base_path: PathBuf,
+    render_md: bool,
     config: Config,
     permalinks: HashMap<String, String>,
     output_path: PathBuf,
@@ -41,7 +42,8 @@ impl GetUrl {
         permalinks: HashMap<String, String>,
         output_path: PathBuf,
     ) -> Self {
-        Self { base_path, config, permalinks, output_path }
+        let render_md = config.is_in_render_md_mode();
+        Self { base_path, render_md, config, permalinks, output_path }
     }
 }
 
@@ -89,7 +91,20 @@ impl TeraFn for GetUrl {
             let path_with_lang = make_path_with_lang(path, &lang, &self.config)?;
 
             match resolve_internal_link(&path_with_lang, &self.permalinks) {
-                Ok(resolved) => Ok(to_value(resolved.permalink).unwrap()),
+                Ok(resolved) => {
+                    if self.render_md {
+                        // Return a relative .md path instead of an absolute URL.
+                        // _index.md section files are output as index.md.
+                        let md_path = resolved.md_path.replace("_index.md", "index.md");
+                        let result = match resolved.anchor {
+                            Some(anchor) => format!("{}#{}", md_path, anchor),
+                            None => md_path,
+                        };
+                        Ok(to_value(result).unwrap())
+                    } else {
+                        Ok(to_value(resolved.permalink).unwrap())
+                    }
+                }
                 Err(_) => Err(format!(
                     "`get_url`: could not resolve URL for link `{}` not found.",
                     path_with_lang
@@ -109,6 +124,15 @@ impl TeraFn for GetUrl {
             segments.push(path);
 
             let path_with_lang = segments.join("/");
+
+            if self.render_md {
+                // Return a root-relative path, stripping the base URL.
+                let mut rel = format!("/{}", path_with_lang.trim_start_matches('/'));
+                if !trailing_slash && rel.ends_with('/') {
+                    rel.pop();
+                }
+                return Ok(to_value(rel).unwrap());
+            }
 
             let mut permalink = self.config.make_permalink(&path_with_lang);
             if !trailing_slash && permalink.ends_with('/') {

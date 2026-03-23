@@ -8,7 +8,7 @@ use tera::{Context as TeraContext, Tera};
 
 use config::Config;
 use errors::{Context, Result};
-use markdown::{RenderContext, render_content};
+use markdown::{RenderContext, render_content, render_content_md};
 use utils::slugs::slugify_paths;
 use utils::table_of_contents::Heading;
 use utils::templates::{ShortcodeDefinition, render_template};
@@ -224,23 +224,38 @@ impl Page {
         context.set_current_page_path(&self.file.relative);
         context.tera_context.insert("page", &SerializingPage::new(self, None, false));
 
-        let res = render_content(&self.raw_content, &context)
-            .with_context(|| format!("Failed to render content of {}", self.file.path.display()))?;
+        if config.is_in_render_md_mode() {
+            let depth =
+                std::path::Path::new(&self.file.relative).components().count().saturating_sub(1);
+            context.tera_context.insert("root_path", &"../".repeat(depth));
+            let res = render_content_md(&self.raw_content, &context).with_context(|| {
+                format!("Failed to render content of {}", self.file.path.display())
+            })?;
+            self.content = res.body;
+            self.toc = res.toc;
+            self.internal_links = res.internal_links;
+            self.external_links = res.external_links;
+        } else {
+            let res = render_content(&self.raw_content, &context).with_context(|| {
+                format!("Failed to render content of {}", self.file.path.display())
+            })?;
 
-        self.summary = res.summary;
-        self.content = res.body;
-        self.toc = res.toc;
-        self.external_links = res.external_links;
-        self.internal_links = res.internal_links;
+            self.summary = res.summary;
+            self.content = res.body;
+            self.toc = res.toc;
+            self.external_links = res.external_links;
+            self.internal_links = res.internal_links;
+        }
 
         Ok(())
     }
 
     /// Renders the page using the default layout, unless specified in front-matter
     pub fn render_html(&self, tera: &Tera, config: &Config, library: &Library) -> Result<String> {
-        let tpl_name = match self.meta.template {
-            Some(ref l) => l,
-            None => "page.html",
+        let tpl_name = if config.is_in_render_md_mode() {
+            self.meta.md_template.as_deref().unwrap_or("page.md")
+        } else {
+            self.meta.template.as_deref().unwrap_or("page.html")
         };
 
         let mut context = TeraContext::new();

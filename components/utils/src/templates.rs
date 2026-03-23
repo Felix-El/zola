@@ -4,14 +4,16 @@ use tera::{Context, Tera};
 
 use errors::{Result, bail};
 
-const DEFAULT_TPL: &str = include_str!("default_tpl.html");
+const DEFAULT_TPL_HTML: &str = include_str!("default_tpl.html");
+const DEFAULT_TPL_MD: &str = include_str!("default_tpl.md");
 
 macro_rules! render_default_tpl {
     ($filename: expr, $url: expr) => {{
+        let tpl = if $filename.ends_with(".md") { DEFAULT_TPL_MD } else { DEFAULT_TPL_HTML };
         let mut context = Context::new();
         context.insert("filename", $filename);
         context.insert("url", $url);
-        Tera::one_off(DEFAULT_TPL, &context, true).map_err(std::convert::Into::into)
+        Tera::one_off(tpl, &context, true).map_err(std::convert::Into::into)
     }};
 }
 
@@ -25,12 +27,16 @@ pub enum ShortcodeFileType {
 pub struct ShortcodeDefinition {
     pub file_type: ShortcodeFileType,
     pub tera_name: String,
+    /// If a `.md` variant of this shortcode exists alongside a `.html` variant,
+    /// its template name is stored here. Used by render-md mode to pick the
+    /// markdown-native shortcode instead of the HTML one.
+    pub md_tera_name: Option<String>,
 }
 impl ShortcodeDefinition {
     pub fn new(file_type: ShortcodeFileType, tera_name: &str) -> ShortcodeDefinition {
         let tera_name = tera_name.to_string();
 
-        ShortcodeDefinition { file_type, tera_name }
+        ShortcodeDefinition { file_type, tera_name, md_tera_name: None }
     }
 }
 
@@ -54,21 +60,26 @@ impl ShortcodeInvocationCounter {
 
 /// Fetches all the shortcodes from the Tera instances
 pub fn get_shortcodes(tera: &Tera) -> HashMap<String, ShortcodeDefinition> {
-    let mut shortcode_definitions = HashMap::new();
+    // Two-pass build: first collect everything keyed by shortcode name,
+    // then merge `.md` variants into their `.html` counterpart's `md_tera_name`
+    // so that both are accessible without one overwriting the other.
+    let mut html_defs: HashMap<String, ShortcodeDefinition> = HashMap::new();
+    let mut md_overrides: HashMap<String, String> = HashMap::new(); // name -> md tera_name
 
     for (identifier, template) in tera.templates.iter() {
-        let (file_type, ext_len) = if template.name.ends_with(".md") {
-            (ShortcodeFileType::Markdown, "md".len())
-        } else {
-            (ShortcodeFileType::Html, "html".len())
-        };
+        let is_md = template.name.ends_with(".md");
+        let ext_len = if is_md { "md".len() } else { "html".len() };
+        let file_type = if is_md { ShortcodeFileType::Markdown } else { ShortcodeFileType::Html };
 
         if template.name.starts_with("shortcodes/") {
             let head_len = "shortcodes/".len();
-            shortcode_definitions.insert(
-                identifier[head_len..(identifier.len() - ext_len - 1)].to_string(),
-                ShortcodeDefinition::new(file_type, &template.name),
-            );
+            let name =
+                identifier[head_len..(identifier.len() - ext_len - 1)].to_string();
+            if is_md {
+                md_overrides.insert(name, template.name.clone());
+            } else {
+                html_defs.insert(name, ShortcodeDefinition::new(file_type, &template.name));
+            }
             continue;
         }
 
@@ -76,15 +87,33 @@ pub fn get_shortcodes(tera: &Tera) -> HashMap<String, ShortcodeDefinition> {
             let head_len = "__zola_builtins/shortcodes/".len();
             let name = &identifier[head_len..(identifier.len() - ext_len - 1)];
             // We don't keep the built-ins one if the user provided one
-            if shortcode_definitions.contains_key(name) {
-                continue;
+            if !html_defs.contains_key(name) && !md_overrides.contains_key(name) {
+                if is_md {
+                    md_overrides.insert(name.to_string(), template.name.clone());
+                } else {
+                    html_defs.insert(
+                        name.to_string(),
+                        ShortcodeDefinition::new(file_type, &template.name),
+                    );
+                }
             }
-            shortcode_definitions
-                .insert(name.to_string(), ShortcodeDefinition::new(file_type, &template.name));
         }
     }
 
-    shortcode_definitions
+    // Merge: attach md_overrides onto their html counterparts; if no html counterpart
+    // exists (md-only shortcode), insert it as a primary md definition.
+    for (name, md_tera_name) in md_overrides {
+        if let Some(def) = html_defs.get_mut(&name) {
+            def.md_tera_name = Some(md_tera_name);
+        } else {
+            html_defs.insert(
+                name,
+                ShortcodeDefinition::new(ShortcodeFileType::Markdown, &md_tera_name),
+            );
+        }
+    }
+
+    html_defs
 }
 
 /// Renders the given template with the given context, but also ensures that, if the default file
@@ -103,15 +132,15 @@ pub fn render_template(
 
     // maybe it's a default one?
     match name {
-        "index.html" | "section.html" => render_default_tpl!(
+        "index.html" | "section.html" | "index.md" | "section.md" => render_default_tpl!(
             name,
             "https://www.getzola.org/documentation/templates/pages-sections/#section-variables"
         ),
-        "page.html" => render_default_tpl!(
+        "page.html" | "page.md" => render_default_tpl!(
             name,
             "https://www.getzola.org/documentation/templates/pages-sections/#page-variables"
         ),
-        "single.html" | "list.html" => {
+        "single.html" | "list.html" | "single.md" |  "list.md" => {
             render_default_tpl!(name, "https://www.getzola.org/documentation/templates/taxonomies/")
         }
         _ => bail!("Tried to render `{}` but the template wasn't found", name),

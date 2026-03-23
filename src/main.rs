@@ -203,6 +203,18 @@ fn main() {
                 }
             }
         }
+        Command::RenderMd { output_dir, drafts } => {
+            log::info!("Rendering site as Markdown...");
+            let start = Instant::now();
+            let (root_dir, config_file) = get_config_file_path(&cli_dir, cli.config.as_deref());
+            match cmd::render_md(&root_dir, &config_file, output_dir.as_deref(), drafts) {
+                Ok(()) => messages::report_elapsed_time(start),
+                Err(e) => {
+                    messages::unravel_errors("Failed to render site as Markdown", &e);
+                    std::process::exit(1);
+                }
+            }
+        }
         Command::Completion { shell } => {
             let cmd = &mut Cli::command();
             clap_complete::generate(shell, cmd, cmd.get_name().to_string(), &mut std::io::stdout());

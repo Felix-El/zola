@@ -22,7 +22,9 @@ walkdir = { workspace = true }
 errors = { workspace = true }
 config = { workspace = true }
 console = { workspace = true }
+markdown = { workspace = true }
 utils = { workspace = true }
+serde_json = { workspace = true }
 templates = { workspace = true }
 search = { workspace = true }
 imageproc = { workspace = true }

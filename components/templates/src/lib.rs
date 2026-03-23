@@ -25,6 +25,8 @@ pub static ZOLA_TERA: Lazy<Tera> = Lazy::new(|| {
         ("__zola_builtins/anchor-link.html", include_str!("builtins/anchor-link.html")),
         ("__zola_builtins/summary-cutoff.html", include_str!("builtins/summary-cutoff.html")),
         ("internal/alias.html", include_str!("builtins/internal/alias.html")),
+        ("__zola_builtins/page.md", include_str!("builtins/page.md")),
+        ("__zola_builtins/section.md", include_str!("builtins/section.md")),
     ])
     .unwrap();
     tera.register_filter("base64_encode", filters::base64_encode);

@@ -145,11 +145,10 @@ pub struct EnqueueResponse {
 impl EnqueueResponse {
     fn new(
         url: String,
-        static_path: PathBuf,
+        static_path: String,
         meta: &ImageMeta,
         instr: &ResizeInstructions,
     ) -> Self {
-        let static_path = static_path.to_string_lossy().into_owned();
         let (width, height) = instr.resize_instruction.unwrap_or(meta.size);
         let (orig_width, orig_height) = meta.size;
 
@@ -183,6 +182,10 @@ impl Processor {
         self.base_url = config.make_permalink(RESIZED_SUBDIR);
     }
 
+    pub fn set_output_dir(&mut self, base_path: &Path) {
+        self.output_dir = base_path.join("static").join(RESIZED_SUBDIR);
+    }
+
     pub fn num_img_ops(&self) -> usize {
         self.img_ops.len()
     }
@@ -209,7 +212,7 @@ impl Processor {
         // Now we have all the data we need to generate the output filename and the response
         let filename = get_processed_filename(&input_path, &input_src, &op, &format);
         let url = format!("{}{}", self.base_url, filename);
-        let static_path = Path::new("static").join(RESIZED_SUBDIR).join(&filename);
+        let static_path = format!("static/{}/{}", RESIZED_SUBDIR, filename);
         let output_path = self.output_dir.join(&filename);
         let instr = ResizeInstructions::new(op, meta.size);
         let enqueue_response = EnqueueResponse::new(url, static_path, meta, &instr);

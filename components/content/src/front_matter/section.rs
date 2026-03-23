@@ -30,6 +30,9 @@ pub struct SectionFrontMatter {
     /// Optional template, if we want to specify which template to render for that section
     #[serde(skip_serializing)]
     pub template: Option<String>,
+    /// Optional template to use when rendering that section as Markdown
+    #[serde(skip_serializing)]
+    pub md_template: Option<String>,
     /// How many pages to be displayed per paginated page. No pagination will happen if this isn't set
     #[serde(skip_serializing)]
     pub paginate_by: Option<usize>,
@@ -105,6 +108,7 @@ impl Default for SectionFrontMatter {
             sort_by: SortBy::None,
             weight: 0,
             template: None,
+            md_template: None,
             paginate_by: None,
             paginate_reversed: false,
             paginate_path: DEFAULT_PAGINATE_PATH.to_string(),

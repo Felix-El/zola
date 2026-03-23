@@ -208,9 +208,13 @@ impl Taxonomy {
         let context = self.build_term_context(item, config, library);
 
         // Check for taxon-specific template, or use generic as fallback.
-        let specific_template = format!("{}/single.html", self.kind.name);
+        let (specific_template, fallback) = if config.is_in_render_md_mode() {
+            (format!("{}/single.md", self.kind.name), "taxonomy_single.md")
+        } else {
+            (format!("{}/single.html", self.kind.name), "taxonomy_single.html")
+        };
         let template = check_template_fallbacks(&specific_template, tera, &config.theme)
-            .unwrap_or("taxonomy_single.html");
+            .unwrap_or(fallback);
 
         render_template(template, tera, context, &config.theme)
             .with_context(|| format!("Failed to render single term {} page.", self.kind.name))
@@ -252,9 +256,13 @@ impl Taxonomy {
         context.insert("current_path", &self.path);
 
         // Check for taxon-specific template, or use generic as fallback.
-        let specific_template = format!("{}/list.html", self.kind.name);
+        let (specific_template, fallback) = if config.is_in_render_md_mode() {
+            (format!("{}/list.md", self.kind.name), "taxonomy_list.md")
+        } else {
+            (format!("{}/list.html", self.kind.name), "taxonomy_list.html")
+        };
         let template = check_template_fallbacks(&specific_template, tera, &config.theme)
-            .unwrap_or("taxonomy_list.html");
+            .unwrap_or(fallback);
 
         render_template(template, tera, context, &config.theme)
             .with_context(|| format!("Failed to render a list of {} page.", self.kind.name))

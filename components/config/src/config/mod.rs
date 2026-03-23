@@ -27,6 +27,8 @@ pub enum Mode {
     Build,
     Serve,
     Check,
+    #[serde(rename = "render_markdown")]
+    RenderMarkdown,
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -323,6 +325,14 @@ impl Config {
         self.mode = Mode::Check;
         // Disable syntax highlighting since the results won't be used and it is slow
         self.markdown.highlighting = None;
+    }
+
+    pub fn is_in_render_md_mode(&self) -> bool {
+        self.mode == Mode::RenderMarkdown
+    }
+
+    pub fn enable_render_md_mode(&mut self) {
+        self.mode = Mode::RenderMarkdown;
     }
 
     pub fn get_translation(&self, lang: &str, key: &str) -> Result<String> {

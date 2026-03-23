@@ -127,6 +127,11 @@ impl Site {
         self.build_mode = build_mode;
     }
 
+    /// Switch to `zola render-md` mode, writing processed Markdown to `output_path`.
+    pub fn enable_render_md_mode(&mut self) {
+        self.config.enable_render_md_mode();
+    }
+
     /// Set the site to load the drafts.
     /// Needs to be called before loading it
     pub fn include_drafts(&mut self) {
@@ -175,6 +180,9 @@ impl Site {
 
     pub fn set_output_path<P: AsRef<Path>>(&mut self, path: P) {
         self.output_path = path.as_ref().to_path_buf();
+        // Update the image processor to write to the correct output directory
+        let mut imageproc = self.imageproc.lock().expect("Couldn't lock imageproc (set_output_path)");
+        imageproc.set_output_dir(&self.output_path);
     }
 
     pub fn minify(&mut self) {
@@ -767,9 +775,19 @@ impl Site {
         }
 
         let output = page.render_html(&self.tera, &self.config, &self.library.read().unwrap())?;
-        let content = self.inject_livereload(output);
-        let components: Vec<&str> = page.path.split('/').collect();
-        let current_path = self.write_content(&components, "index.html", content)?;
+
+        let current_path = if self.config.is_in_render_md_mode() {
+            // Mirror content source file structure (e.g. posts/simple.md, hello.md)
+            let relative = &page.file.relative;
+            let (dir, fname) = relative.rsplit_once('/').unwrap_or(("", relative));
+            let components: Vec<&str> =
+                if dir.is_empty() { vec![] } else { dir.split('/').collect() };
+            self.write_content(&components, fname, output)?
+        } else {
+            let content = self.inject_livereload(output);
+            let components: Vec<&str> = page.path.split('/').collect();
+            self.write_content(&components, "index.html", content)?
+        };
 
         // Copy any asset we found previously into the same directory as the index.html
         self.copy_assets(page.file.path.parent().unwrap(), &page.assets, &current_path)?;
@@ -786,67 +804,77 @@ impl Site {
         }
         start = log_time(start, "Cleaned folder");
 
-        // Generate/move all assets before markdown any content
-        if let Some(ref theme) = self.config.theme {
-            let theme_path = self.base_path.join("themes").join(theme);
-            if theme_path.join("sass").exists() {
-                sass::compile_sass(&theme_path, &self.output_path)?;
-                start = log_time(start, "Compiled theme Sass");
+        if !self.config.is_in_render_md_mode() {
+            // Generate/move all assets before rendering any content
+            if let Some(ref theme) = self.config.theme {
+                let theme_path = self.base_path.join("themes").join(theme);
+                if theme_path.join("sass").exists() {
+                    sass::compile_sass(&theme_path, &self.output_path)?;
+                    start = log_time(start, "Compiled theme Sass");
+                }
             }
-        }
 
-        if self.config.compile_sass {
-            sass::compile_sass(&self.base_path, &self.output_path)?;
-            start = log_time(start, "Compiled own Sass");
-        }
+            if self.config.compile_sass {
+                sass::compile_sass(&self.base_path, &self.output_path)?;
+                start = log_time(start, "Compiled own Sass");
+            }
 
-        if self.config.build_search_index {
-            self.build_search_index()?;
-            start = log_time(start, "Built search index");
-        }
+            if self.config.build_search_index {
+                self.build_search_index()?;
+                start = log_time(start, "Built search index");
+            }
 
-        // Render aliases first to allow overwriting
-        self.render_aliases()?;
-        start = log_time(start, "Rendered aliases");
+            // Render aliases first to allow overwriting
+            self.render_aliases()?;
+            start = log_time(start, "Rendered aliases");
+        }
         self.render_sections()?;
         start = log_time(start, "Rendered sections");
         self.render_orphan_pages()?;
         start = log_time(start, "Rendered orphan pages");
-        if self.config.generate_sitemap {
-            self.render_sitemap()?;
-            start = log_time(start, "Rendered sitemap");
-        }
 
-        let library = self.library.read().unwrap();
-        if self.config.generate_feeds {
-            let is_multilingual = self.config.is_multilingual();
-            let pages: Vec<_> = if is_multilingual {
-                library.pages.values().filter(|p| p.lang == self.config.default_language).collect()
-            } else {
-                library.pages.values().collect()
-            };
-            self.render_feeds(pages, None, &self.config.default_language, |c| c)?;
-            start = log_time(start, "Generated feed in default language");
-        }
-
-        for (code, language) in &self.config.other_languages() {
-            if !language.generate_feeds {
-                continue;
+        if !self.config.is_in_render_md_mode() {
+            if self.config.generate_sitemap {
+                self.render_sitemap()?;
+                start = log_time(start, "Rendered sitemap");
             }
-            let pages: Vec<_> = library.pages.values().filter(|p| &p.lang == code).collect();
-            self.render_feeds(pages, Some(&PathBuf::from(code)), code, |c| c)?;
-            start = log_time(start, "Generated feed in other language");
-        }
-        self.render_themes_css()?;
-        start = log_time(start, "Rendered themes css");
-        self.render_404()?;
-        start = log_time(start, "Rendered 404");
-        if self.config.generate_robots_txt {
-            self.render_robots()?;
-            start = log_time(start, "Rendered robots.txt");
+
+            let library = self.library.read().unwrap();
+            if self.config.generate_feeds {
+                let is_multilingual = self.config.is_multilingual();
+                let pages: Vec<_> = if is_multilingual {
+                    library
+                        .pages
+                        .values()
+                        .filter(|p| p.lang == self.config.default_language)
+                        .collect()
+                } else {
+                    library.pages.values().collect()
+                };
+                self.render_feeds(pages, None, &self.config.default_language, |c| c)?;
+                start = log_time(start, "Generated feed in default language");
+            }
+
+            for (code, language) in &self.config.other_languages() {
+                if !language.generate_feeds {
+                    continue;
+                }
+                let pages: Vec<_> = library.pages.values().filter(|p| &p.lang == code).collect();
+                self.render_feeds(pages, Some(&PathBuf::from(code)), code, |c| c)?;
+                start = log_time(start, "Generated feed in other language");
+            }
+            self.render_themes_css()?;
+            start = log_time(start, "Rendered themes css");
+            self.render_404()?;
+            start = log_time(start, "Rendered 404");
+            if self.config.generate_robots_txt {
+                self.render_robots()?;
+                start = log_time(start, "Rendered robots.txt");
+            }
         }
         self.render_taxonomies()?;
         start = log_time(start, "Rendered taxonomies");
+
         // We process images at the end as we might have picked up images to process from markdown
         // or from templates
         self.process_images()?;
@@ -1012,8 +1040,16 @@ impl Site {
 
         let list_output =
             taxonomy.render_all_terms(&self.tera, &self.config, &self.library.read().unwrap())?;
-        let content = self.inject_livereload(list_output);
-        self.write_content(&components, "index.html", content)?;
+        let filename;
+        let content;
+        if self.config.is_in_render_md_mode() {
+            filename = "index.md";
+            content = list_output;
+        } else {
+            filename = "index.html";
+            content = self.inject_livereload(list_output);
+        }
+        self.write_content(&components, filename, content)?;
 
         let library = self.library.read().unwrap();
         taxonomy
@@ -1023,7 +1059,7 @@ impl Site {
                 let mut comp = components.clone();
                 comp.push(&item.slug);
 
-                if taxonomy.kind.is_paginated() {
+                if !self.config.is_in_render_md_mode() && taxonomy.kind.is_paginated() {
                     self.render_paginated(
                         comp.clone(),
                         &Paginator::from_taxonomy(
@@ -1037,11 +1073,14 @@ impl Site {
                 } else {
                     let single_output =
                         taxonomy.render_term(item, &self.tera, &self.config, &library)?;
-                    let content = self.inject_livereload(single_output);
-                    self.write_content(&comp, "index.html", content)?;
+                    let content = match self.config.is_in_render_md_mode() {
+                        true => single_output,
+                        false => self.inject_livereload(single_output),
+                    };
+                    self.write_content(&comp, filename, content)?;
                 }
 
-                if taxonomy.kind.feed {
+                if !self.config.is_in_render_md_mode() && taxonomy.kind.feed {
                     let tax_path = if taxonomy.lang == self.config.default_language {
                         if let Some(ref taxonomy_root) = self.config.taxonomy_root {
                             PathBuf::from(format!(
@@ -1181,21 +1220,23 @@ impl Site {
             output_path.push(component);
         }
 
-        if section.meta.generate_feeds {
-            let library = &self.library.read().unwrap();
-            let pages = section.pages.iter().map(|k| library.pages.get(k).unwrap()).collect();
-            self.render_feeds(
-                pages,
-                Some(&PathBuf::from(&section.path[1..])),
-                &section.lang,
-                |mut context: Context| {
-                    context.insert("section", &section.serialize(library));
-                    context
-                },
-            )?;
+        if !self.config.is_in_render_md_mode() {
+            if section.meta.generate_feeds {
+                let library = &self.library.read().unwrap();
+                let pages = section.pages.iter().map(|k| library.pages.get(k).unwrap()).collect();
+                self.render_feeds(
+                    pages,
+                    Some(&PathBuf::from(&section.path[1..])),
+                    &section.lang,
+                    |mut context: Context| {
+                        context.insert("section", &section.serialize(library));
+                        context
+                    },
+                )?;
+            }
         }
 
-        // Copy any asset we found previously into the same directory as the index.html
+        // Copy any asset we found previously into the same directory as the output file
         self.copy_assets(section.file.path.parent().unwrap(), &section.assets, &output_path)?;
 
         if render_pages {
@@ -1210,32 +1251,43 @@ impl Site {
             return Ok(());
         }
 
-        if let Some(ref redirect_to) = section.meta.redirect_to {
-            let permalink: Cow<str> = if is_external_link(redirect_to) {
-                Cow::Borrowed(redirect_to)
-            } else {
-                Cow::Owned(self.config.make_permalink(redirect_to))
-            };
-            self.write_content(
-                &components,
-                "index.html",
-                render_redirect_template(&permalink, &self.tera)?,
-            )?;
-
-            return Ok(());
-        }
-
-        if section.meta.is_paginated() {
-            self.render_paginated(
-                components,
-                &Paginator::from_section(section, &self.library.read().unwrap()),
-            )?;
+        let filename;
+        let content;
+        if self.config.is_in_render_md_mode() {
+            content =
+                section.render_html(&self.tera, &self.config, &self.library.read().unwrap())?;
+            filename = "index.md";
         } else {
+            if let Some(ref redirect_to) = section.meta.redirect_to {
+                let permalink: Cow<str> = if is_external_link(redirect_to) {
+                    Cow::Borrowed(redirect_to)
+                } else {
+                    Cow::Owned(self.config.make_permalink(redirect_to))
+                };
+                self.write_content(
+                    &components,
+                    "index.html",
+                    render_redirect_template(&permalink, &self.tera)?,
+                )?;
+
+                return Ok(());
+            }
+
+            if section.meta.is_paginated() {
+                self.render_paginated(
+                    components,
+                    &Paginator::from_section(section, &self.library.read().unwrap()),
+                )?;
+
+                return Ok(());
+            }
+
             let output =
                 section.render_html(&self.tera, &self.config, &self.library.read().unwrap())?;
-            let content = self.inject_livereload(output);
-            self.write_content(&components, "index.html", content)?;
+            content = self.inject_livereload(output);
+            filename = "index.html";
         }
+        self.write_content(&components, filename, content)?;
 
         Ok(())
     }

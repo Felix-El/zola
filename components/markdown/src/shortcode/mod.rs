@@ -11,12 +11,13 @@ pub(crate) use parser::{SHORTCODE_PLACEHOLDER, Shortcode, parse_for_shortcodes};
 pub fn extract_shortcodes(
     source: &str,
     definitions: &HashMap<String, ShortcodeDefinition>,
+    prefer_md: bool,
 ) -> Result<(String, Vec<Shortcode>)> {
     let (out, mut shortcodes) =
         parse_for_shortcodes(source, &mut ShortcodeInvocationCounter::new())?;
 
     for sc in &mut shortcodes {
-        sc.fill_tera_name(definitions)?;
+        sc.fill_tera_name(definitions, prefer_md)?;
     }
 
     Ok((out, shortcodes))

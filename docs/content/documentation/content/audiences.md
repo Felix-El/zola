@@ -172,13 +172,13 @@ Create `templates/shortcodes/for_audiences.html`:
 Usage in Markdown:
 
 ```
-{% for_audiences(any=["internal", "partner"]) %}
+{%/* for_audiences(any=["internal", "partner"]) */%}
 This paragraph is only rendered when
 
 1. the build targets the `internal` audience.
 2. the build targets the `partner` audience.
 3. the build does not use the audience feature at all.
-{% end %}
+{%/* end */%}
 ```
 
 When `config.audiences` is not set (feature disabled), the block always renders.

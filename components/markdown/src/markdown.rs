@@ -247,6 +247,179 @@ fn get_heading_refs(events: &[Event]) -> Vec<HeadingRef> {
     heading_refs
 }
 
+/// Compute a relative .md path from one content-tree file to another.
+///
+/// `from` is the current page's source-relative path (e.g. `docs/content/foo.md`),
+/// `to` is the target page's `md_path` (e.g. `docs/templates/bar.md`).
+/// `_index.md` in `to` is mapped to `index.md` to match the render-md output layout.
+fn md_relative_path(from: &str, to: &str, anchor: Option<&str>) -> String {
+    let to_norm: String = if to.ends_with("_index.md") {
+        format!("{}index.md", &to[..to.len() - "_index.md".len()])
+    } else {
+        to.to_owned()
+    };
+
+    let from_parts: Vec<&str> = from.split('/').collect();
+    let to_parts: Vec<&str> = to_norm.split('/').collect();
+    // The directory of `from` is everything except the last component (the filename).
+    let from_dir = &from_parts[..from_parts.len().saturating_sub(1)];
+
+    let common = from_dir.iter().zip(to_parts.iter()).take_while(|(a, b)| a == b).count();
+    let ups = from_dir.len() - common;
+
+    let mut rel = String::new();
+    for _ in 0..ups {
+        rel.push_str("../");
+    }
+    rel.push_str(&to_parts[common..].join("/"));
+
+    if let Some(a) = anchor {
+        rel.push('#');
+        rel.push_str(a);
+    }
+    rel
+}
+
+/// Lightweight metadata extraction for render-md mode.
+/// Parses `content` (post-shortcode markdown) with pulldown-cmark to populate
+/// `internal_links`, `external_links`, and `toc` — without generating any HTML.
+/// `@/` internal links in the body are rewritten to page-relative `.md` paths.
+pub(crate) fn render_md_with_meta(content: &str, context: &RenderContext) -> Result<Rendered> {
+    let mut internal_links: Vec<(String, Option<String>)> = Vec::new();
+    let mut external_links: Vec<String> = Vec::new();
+    // Byte-range replacements to apply to `content` to produce the final body.
+    // Each entry is (start_byte, end_byte, replacement_string).
+    let mut link_replacements: Vec<(usize, usize, String)> = Vec::new();
+
+    let mut opts = Options::empty();
+    opts.insert(Options::ENABLE_TABLES);
+    opts.insert(Options::ENABLE_FOOTNOTES);
+    opts.insert(Options::ENABLE_STRIKETHROUGH);
+    opts.insert(Options::ENABLE_TASKLISTS);
+    opts.insert(Options::ENABLE_HEADING_ATTRIBUTES);
+    if context.config.markdown.smart_punctuation {
+        opts.insert(Options::ENABLE_SMART_PUNCTUATION);
+    }
+    if context.config.markdown.definition_list {
+        opts.insert(Options::ENABLE_DEFINITION_LIST);
+    }
+    if context.config.markdown.github_alerts {
+        opts.insert(Options::ENABLE_GFM);
+    }
+
+    let mut events: Vec<Event<'_>> = Vec::new();
+    for (event, range) in Parser::new_ext(content, opts).into_offset_iter() {
+        match event {
+            Event::Start(Tag::Link { link_type, dest_url, title, id }) => {
+                if dest_url.starts_with("@/") {
+                    match resolve_internal_link(&dest_url, &context.permalinks) {
+                        Ok(resolved) => {
+                            internal_links
+                                .push((resolved.md_path.clone(), resolved.anchor.clone()));
+                            if let Some(current_path) = context.current_page_path {
+                                let new_url = md_relative_path(
+                                    current_path,
+                                    &resolved.md_path,
+                                    resolved.anchor.as_deref(),
+                                );
+                                // Find the verbatim URL in the source slice for this link.
+                                let source_slice = &content[range.clone()];
+                                if let Some(pos) = source_slice.find(dest_url.as_ref()) {
+                                    let abs_start = range.start + pos;
+                                    let abs_end = abs_start + dest_url.len();
+                                    link_replacements.push((abs_start, abs_end, new_url));
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            let msg = format!(
+                                "Broken relative link `{}` in {}",
+                                dest_url,
+                                context.current_page_path.unwrap_or("unknown"),
+                            );
+                            match context.config.link_checker.internal_level {
+                                config::LinkCheckerLevel::Error => bail!(msg),
+                                config::LinkCheckerLevel::Warn => log::warn!("{msg}"),
+                            }
+                        }
+                    }
+                } else if !dest_url.is_empty() {
+                    let _ = fix_link(
+                        link_type,
+                        &dest_url,
+                        context,
+                        &mut internal_links,
+                        &mut external_links,
+                    );
+                }
+                events.push(Event::Start(Tag::Link { link_type, dest_url, title, id }));
+            }
+            other => events.push(other),
+        }
+    }
+
+    let heading_refs = get_heading_refs(&events);
+    let mut headings: Vec<Heading> = Vec::new();
+    let mut inserted_anchors: Vec<String> = Vec::new();
+
+    for heading in &heading_refs {
+        if let Some(s) = &heading.id {
+            inserted_anchors.push(s.to_owned());
+        }
+    }
+
+    for heading_ref in heading_refs {
+        let start_idx = heading_ref.start_idx;
+        let end_idx = heading_ref.end_idx;
+        let title = get_text(&events[start_idx + 1..end_idx]);
+
+        let id = if let Some(id) = heading_ref.id {
+            id
+        } else {
+            let id = find_anchor(
+                &inserted_anchors,
+                slugify_anchors(&title, context.config.slugify.anchors),
+                0,
+            );
+            inserted_anchors.push(id.clone());
+            id
+        };
+
+        let permalink = format!("{}#{}", context.current_page_permalink, id);
+        headings.push(Heading {
+            level: heading_ref.level,
+            id,
+            permalink,
+            title,
+            children: Vec::new(),
+        });
+    }
+
+    // Rebuild the body with all @/ link replacements applied.
+    let body = if link_replacements.is_empty() {
+        content.to_string()
+    } else {
+        link_replacements.sort_unstable_by_key(|(start, ..)| *start);
+        let mut out = String::with_capacity(content.len());
+        let mut last = 0usize;
+        for (start, end, replacement) in &link_replacements {
+            out.push_str(&content[last..*start]);
+            out.push_str(replacement);
+            last = *end;
+        }
+        out.push_str(&content[last..]);
+        out
+    };
+
+    Ok(Rendered {
+        body,
+        summary: None,
+        toc: make_table_of_contents(headings),
+        internal_links,
+        external_links,
+    })
+}
+
 fn convert_footnotes_to_github_style(old_events: &mut Vec<Event>) {
     let events = std::mem::take(old_events);
     // step 1: We need to extract footnotes from the event stream and tweak footnote references

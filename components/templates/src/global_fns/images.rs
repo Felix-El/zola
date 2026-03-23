@@ -142,7 +142,7 @@ mod tests {
     use std::fs::{copy, create_dir_all};
 
     use config::Config;
-    use std::path::{Path, PathBuf};
+    use std::path::PathBuf;
     use std::sync::{Arc, Mutex};
     use tempfile::{TempDir, tempdir};
     use tera::{Function, to_value};
@@ -186,12 +186,9 @@ mod tests {
         // 1. resizing an image in static
         args.insert("path".to_string(), to_value("static/gutenberg.jpg").unwrap());
         let data = static_fn.call(&args).unwrap().as_object().unwrap().clone();
-        let static_path = Path::new("static").join("processed_images");
-
         assert_eq!(
             data["static_path"],
-            to_value(&format!("{}", static_path.join("gutenberg.e99218b5a3185c99.jpg").display()))
-                .unwrap()
+            to_value("static/processed_images/gutenberg.e99218b5a3185c99.jpg").unwrap()
         );
         assert_eq!(
             data["url"],
@@ -204,8 +201,7 @@ mod tests {
         let data = static_fn.call(&args).unwrap().as_object().unwrap().clone();
         assert_eq!(
             data["static_path"],
-            to_value(&format!("{}", static_path.join("gutenberg.155d032b1aae0133.jpg").display()))
-                .unwrap()
+            to_value("static/processed_images/gutenberg.155d032b1aae0133.jpg").unwrap()
         );
         assert_eq!(
             data["url"],
@@ -228,8 +224,7 @@ mod tests {
         let data = static_fn.call(&args).unwrap().as_object().unwrap().clone();
         assert_eq!(
             data["static_path"],
-            to_value(&format!("{}", static_path.join("asset.160461e0d0be19e6.jpg").display()))
-                .unwrap()
+            to_value("static/processed_images/asset.160461e0d0be19e6.jpg").unwrap()
         );
         assert_eq!(
             data["url"],
@@ -241,8 +236,7 @@ mod tests {
         let data = static_fn.call(&args).unwrap().as_object().unwrap().clone();
         assert_eq!(
             data["static_path"],
-            to_value(&format!("{}", static_path.join("in-theme.d8f4f6eef30de1b2.jpg").display()))
-                .unwrap()
+            to_value("static/processed_images/in-theme.d8f4f6eef30de1b2.jpg").unwrap()
         );
         assert_eq!(
             data["url"],

@@ -1,5 +1,5 @@
 use std::env;
-use std::path::{MAIN_SEPARATOR as SLASH, PathBuf};
+use std::path::PathBuf;
 
 use config::Config;
 use image::{self, DynamicImage, GenericImageView, ImageDecoder, ImageReader, Pixel};
@@ -25,8 +25,7 @@ build_search_index = false
 
 static TEST_IMGS: Lazy<PathBuf> =
     Lazy::new(|| [env!("CARGO_MANIFEST_DIR"), "tests", "test_imgs"].iter().collect());
-static PROCESSED_PREFIX: Lazy<String> =
-    Lazy::new(|| format!("static{0}processed_images{0}", SLASH));
+static PROCESSED_PREFIX: &str = "static/processed_images/";
 
 #[allow(clippy::too_many_arguments)]
 fn image_op_test(
@@ -52,7 +51,7 @@ fn image_op_test(
     let resp =
         proc.enqueue(resize_op, source_img.into(), source_path, format, quality, speed).unwrap();
     assert_processed_path_matches(&resp.url, "https://example.com/processed_images/", expect_ext);
-    assert_processed_path_matches(&resp.static_path, PROCESSED_PREFIX.as_str(), expect_ext);
+    assert_processed_path_matches(&resp.static_path, PROCESSED_PREFIX, expect_ext);
     assert_eq!(resp.width, expect_width);
     assert_eq!(resp.height, expect_height);
     assert_eq!(resp.orig_width, orig_width);

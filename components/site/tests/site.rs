@@ -22,8 +22,9 @@ fn can_parse_site() {
     let library = site.library.read().unwrap();
 
     // Correct number of pages (sections do not count as pages, draft are ignored)
-    // 36 original + 3 audiences_test pages + 1 internal_sub page + 1 no_audience_sub page = 41
-    assert_eq!(library.pages.len(), 41);
+    // 36 original + 3 audiences_test pages + 1 internal_sub page + 1 no_audience_sub page
+    // + 1 render-md-test page = 42
+    assert_eq!(library.pages.len(), 42);
     let posts_path = path.join("content").join("posts");
 
     // Make sure the page with a url doesn't have any sections
@@ -47,7 +48,7 @@ fn can_parse_site() {
 
     let posts_section = library.sections.get(&posts_path.join("_index.md")).unwrap();
     assert_eq!(posts_section.subsections.len(), 2);
-    assert_eq!(posts_section.pages.len(), 10); // 11 with 1 draft == 10
+    assert_eq!(posts_section.pages.len(), 11); // 12 with 1 draft == 11
     assert_eq!(posts_section.ancestors, vec![index_section.file.relative.clone()]);
 
     // Make sure we remove all the pwd + content from the sections
@@ -448,7 +449,7 @@ fn can_build_site_with_pagination_for_section() {
         "posts/page/1/index.html",
         "http-equiv=\"refresh\" content=\"0; url=https://replace-this-with-your-url.com/posts/\""
     ));
-    assert!(file_contains!(public, "posts/index.html", "Num pagers: 5"));
+    assert!(file_contains!(public, "posts/index.html", "Num pagers: 6"));
     assert!(file_contains!(public, "posts/index.html", "Page size: 2"));
     assert!(file_contains!(public, "posts/index.html", "Current index: 1"));
     assert!(!file_contains!(public, "posts/index.html", "has_prev"));
@@ -461,12 +462,12 @@ fn can_build_site_with_pagination_for_section() {
     assert!(file_contains!(
         public,
         "posts/index.html",
-        "Last: https://replace-this-with-your-url.com/posts/page/5/"
+        "Last: https://replace-this-with-your-url.com/posts/page/6/"
     ));
     assert!(!file_contains!(public, "posts/index.html", "has_prev"));
 
     assert!(file_exists!(public, "posts/page/2/index.html"));
-    assert!(file_contains!(public, "posts/page/2/index.html", "Num pagers: 5"));
+    assert!(file_contains!(public, "posts/page/2/index.html", "Num pagers: 6"));
     assert!(file_contains!(public, "posts/page/2/index.html", "Page size: 2"));
     assert!(file_contains!(public, "posts/page/2/index.html", "Current index: 2"));
     assert!(file_contains!(public, "posts/page/2/index.html", "has_prev"));
@@ -479,11 +480,11 @@ fn can_build_site_with_pagination_for_section() {
     assert!(file_contains!(
         public,
         "posts/page/2/index.html",
-        "Last: https://replace-this-with-your-url.com/posts/page/5/"
+        "Last: https://replace-this-with-your-url.com/posts/page/6/"
     ));
 
     assert!(file_exists!(public, "posts/page/3/index.html"));
-    assert!(file_contains!(public, "posts/page/3/index.html", "Num pagers: 5"));
+    assert!(file_contains!(public, "posts/page/3/index.html", "Num pagers: 6"));
     assert!(file_contains!(public, "posts/page/3/index.html", "Page size: 2"));
     assert!(file_contains!(public, "posts/page/3/index.html", "Current index: 3"));
     assert!(file_contains!(public, "posts/page/3/index.html", "has_prev"));
@@ -496,11 +497,11 @@ fn can_build_site_with_pagination_for_section() {
     assert!(file_contains!(
         public,
         "posts/page/3/index.html",
-        "Last: https://replace-this-with-your-url.com/posts/page/5/"
+        "Last: https://replace-this-with-your-url.com/posts/page/6/"
     ));
 
     assert!(file_exists!(public, "posts/page/4/index.html"));
-    assert!(file_contains!(public, "posts/page/4/index.html", "Num pagers: 5"));
+    assert!(file_contains!(public, "posts/page/4/index.html", "Num pagers: 6"));
     assert!(file_contains!(public, "posts/page/4/index.html", "Page size: 2"));
     assert!(file_contains!(public, "posts/page/4/index.html", "Current index: 4"));
     assert!(file_contains!(public, "posts/page/4/index.html", "has_prev"));
@@ -513,7 +514,7 @@ fn can_build_site_with_pagination_for_section() {
     assert!(file_contains!(
         public,
         "posts/page/4/index.html",
-        "Last: https://replace-this-with-your-url.com/posts/page/5/"
+        "Last: https://replace-this-with-your-url.com/posts/page/6/"
     ));
 
     // sitemap contains the pager pages
@@ -1122,4 +1123,115 @@ fn can_render_config_audiences_in_template() {
         "audiences_test/public-page/index.html",
         "sc-body-internal-visible"
     ));
+}
+
+// ---- render-md tests -------------------------------------------------------
+
+#[test]
+fn render_md_creates_output_files_mirroring_content_structure() {
+    let (_, _tmp_dir, md) = common::render_md_site("test_site");
+
+    // Root pages
+    assert!(file_exists!(md, "hello.md"));
+    assert!(file_exists!(md, "index.md"));
+
+    // Pages inside sections
+    assert!(file_exists!(md, "posts/simple.md"));
+    assert!(file_exists!(md, "posts/python.md"));
+    assert!(file_exists!(md, "posts/render-md-test.md"));
+
+    // Section index files
+    assert!(file_exists!(md, "posts/index.md"));
+    assert!(file_exists!(md, "posts/tutorials/index.md"));
+    assert!(file_exists!(md, "posts/tutorials/devops/index.md"));
+
+    // Colocated page keeps its directory structure
+    assert!(file_exists!(md, "posts/with-assets/index.md"));
+}
+
+#[test]
+fn render_md_output_contains_markdown_body_without_front_matter() {
+    let (_, _tmp_dir, md) = common::render_md_site("test_site");
+
+    // hello.md has no front matter body — file is non-empty but no TOML fences
+    assert!(!file_contains!(md, "hello.md", "+++"));
+    // Body text is present
+    assert!(file_contains!(md, "hello.md", "UTF-8 BOM"));
+
+    // posts/simple.md body text preserved
+    assert!(file_contains!(md, "posts/simple.md", "A simple page"));
+    assert!(!file_contains!(md, "posts/simple.md", "+++"));
+}
+
+#[test]
+fn render_md_expands_markdown_shortcodes_but_leaves_html_shortcode_placeholders() {
+    let (_, _tmp_dir, md) = common::render_md_site("test_site");
+
+    // The `note` shortcode is a .md shortcode — it must be expanded inline.
+    assert!(file_contains!(md, "posts/render-md-test.md", "markdown shortcode expanded"));
+    // The expansion renders to markdown, not raw shortcode syntax.
+    assert!(!file_contains!(md, "posts/render-md-test.md", "{{ note("));
+
+    // The `youtube` shortcode is an HTML shortcode — it becomes a placeholder.
+    assert!(file_contains!(md, "posts/render-md-test.md", "@@ZOLA_SC_PLACEHOLDER@@"));
+    // The raw HTML shortcode invocation should not appear verbatim.
+    assert!(!file_contains!(md, "posts/render-md-test.md", "{{ youtube("));
+
+    // Similarly, pirate (HTML) shortcode in python.md becomes a placeholder.
+    assert!(file_contains!(md, "posts/python.md", "@@ZOLA_SC_PLACEHOLDER@@"));
+    assert!(!file_contains!(md, "posts/python.md", "{{ pirate("));
+}
+
+#[test]
+fn render_md_preserves_more_divider() {
+    let (_, _tmp_dir, md) = common::render_md_site("test_site");
+
+    // python.md contains <!-- more --> — it must pass through unchanged.
+    assert!(file_contains!(md, "posts/python.md", "<!-- more -->"));
+    // The HTML replacement span must NOT appear.
+    assert!(!file_contains!(md, "posts/python.md", "continue-reading"));
+
+    // render-md-test.md also has <!-- more -->
+    assert!(file_contains!(md, "posts/render-md-test.md", "<!-- more -->"));
+}
+
+#[test]
+fn render_md_uses_custom_page_md_template_when_present() {
+    // Build a temporary site that has a custom page.md template adding a known marker.
+    let mut path = env::current_dir().unwrap().parent().unwrap().parent().unwrap().to_path_buf();
+    path.push("test_site");
+    let config_file = path.join("config.toml");
+    let mut site = Site::new(&path, &config_file).unwrap();
+    site.load().unwrap();
+
+    let tmp_dir = tempfile::tempdir().expect("create temp dir");
+    let md_out = tmp_dir.path().join("md");
+
+    // Inject a custom page.md template into Tera before rendering.
+    site.tera
+        .add_raw_template("page.md", "RENDER_MD_MARKER\n{{ page.content }}\n")
+        .expect("failed to add page.md template");
+
+    site.set_output_path(&md_out);
+    site.enable_render_md_mode();
+    site.build().expect("Couldn't render md site");
+
+    // Every page file should contain the marker injected by page.md.
+    assert!(file_contains!(md_out, "posts/simple.md", "RENDER_MD_MARKER"));
+    assert!(file_contains!(md_out, "hello.md", "RENDER_MD_MARKER"));
+
+    // Body content is still present after the marker.
+    assert!(file_contains!(md_out, "posts/simple.md", "A simple page"));
+}
+
+#[test]
+fn render_md_sections_contain_body_content() {
+    let (_, _tmp_dir, md) = common::render_md_site("test_site");
+
+    // Sections with no body should produce empty (or near-empty) files — just the template newline.
+    // posts/index.md has no body text — the output should be very small.
+    let posts_index = md.join("posts").join("index.md");
+    let content = std::fs::read_to_string(&posts_index).expect("posts/index.md not found");
+    // No front matter fences in the output.
+    assert!(!content.contains("+++"));
 }
