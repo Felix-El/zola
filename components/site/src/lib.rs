@@ -461,14 +461,22 @@ impl Site {
                 if let Some(ref l) = lang {
                     index_section.file.name = format!("_index.{}", l);
                     index_section.path = format!("{}/", l);
-                    index_section.permalink = self.config.make_permalink(l);
                     let filename = format!("_index.{}.md", l);
+                    index_section.permalink = if self.config.is_in_render_md_mode() {
+                        format!("{}/{}", self.config.base_url.trim_end_matches('/'), filename.replace("_index.md", "index.md"))
+                    } else {
+                        self.config.make_permalink(l)
+                    };
                     index_section.file.path = self.content_path.join(&filename);
                     index_section.file.relative = filename;
                     index_section.file.canonical = self.content_path.join(format!("_index.{}", l));
                 } else {
                     index_section.file.name = "_index".to_string();
-                    index_section.permalink = self.config.make_permalink("");
+                    index_section.permalink = if self.config.is_in_render_md_mode() {
+                        format!("{}/index.md", self.config.base_url.trim_end_matches('/'))
+                    } else {
+                        self.config.make_permalink("")
+                    };
                     index_section.file.path = self.content_path.join("_index.md");
                     index_section.file.relative = "_index.md".to_string();
                     index_section.file.canonical = self.content_path.join("_index");
@@ -754,6 +762,49 @@ impl Site {
         Ok(current_path)
     }
 
+    /// In render-md mode, `page.permalink` (and nav links derived from it) are stored as
+    /// absolute URLs like `https://base_url/documentation/page.md`. A markdown viewer opened from
+    /// the filesystem resolves links relative to the current file, so we convert every such URL
+    /// to a document-relative path before writing the file.
+    ///
+    /// `base_url` is the site's base URL (e.g. `https://example.com`), without a trailing slash.
+    /// `depth` is the number of directory components the output file sits below the output root
+    /// (0 for a file in the root, 1 for `docs/page.md`, etc.).
+    fn rewrite_root_relative_md_links(content: String, base_url: &str, depth: usize) -> String {
+        // Build the prefix that cancels out the current depth, e.g. depth=2 → "../../"
+        let prefix: String = "../".repeat(depth);
+        // Normalise base_url: no trailing slash, then add "/"
+        let needle = format!("{}/", base_url.trim_end_matches('/'));
+
+        let mut out = String::with_capacity(content.len());
+        let mut rest = content.as_str();
+
+        while let Some(pos) = rest.find(&needle) {
+            // Emit everything before the match verbatim.
+            out.push_str(&rest[..pos]);
+            // Advance past the needle.
+            let after = &rest[pos + needle.len()..];
+            // Scan to the end of the path (stop at link delimiters).
+            let end = after
+                .find(|c: char| matches!(c, '"' | ')' | ']' | ' ' | '\t' | '\n' | '\r'))
+                .unwrap_or(after.len());
+            let candidate = &after[..end];
+            // Only rewrite if the path is a .md file (before any fragment).
+            let md_part = candidate.split('#').next().unwrap_or("");
+            if md_part.ends_with(".md") {
+                out.push_str(&prefix);
+                out.push_str(candidate);
+                rest = &after[end..];
+            } else {
+                // Not an .md link — emit the needle as-is and continue scanning.
+                out.push_str(&needle);
+                rest = after;
+            }
+        }
+        out.push_str(rest);
+        out
+    }
+
     fn copy_assets(&self, parent: &Path, assets: &[impl AsRef<Path>], dest: &Path) -> Result<()> {
         for asset in assets {
             let asset_path = asset.as_ref();
@@ -783,6 +834,7 @@ impl Site {
             let (dir, fname) = relative.rsplit_once('/').unwrap_or(("", relative));
             let components: Vec<&str> =
                 if dir.is_empty() { vec![] } else { dir.split('/').collect() };
+            let output = Self::rewrite_root_relative_md_links(output, &self.config.base_url, components.len());
             self.write_content(&components, fname, output)?
         } else {
             let content = self.inject_livereload(output);
@@ -1255,8 +1307,9 @@ impl Site {
         let filename;
         let content;
         if self.config.is_in_render_md_mode() {
-            content =
+            let raw =
                 section.render_html(&self.tera, &self.config, &self.library.read().unwrap())?;
+            content = Self::rewrite_root_relative_md_links(raw, &self.config.base_url, components.len());
             filename = "index.md";
         } else {
             if let Some(ref redirect_to) = section.meta.redirect_to {

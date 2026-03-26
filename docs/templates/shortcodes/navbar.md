@@ -11,18 +11,19 @@
 #}
 {%- set target = page | default(value=section) -%}
 {%- set parent = target.nav_ancestors | last -%}
-{%- if target.nav_prev or parent or target.nav_next %}
+{%- set has_parent = parent and (parent.title or target.nav_ancestors | length == 1) -%}
+{%- if target.nav_prev or has_parent or target.nav_next %}
 
 ---
 
 {%- if target.nav_prev %}
 &#8656; [{{ target.nav_prev.title | default(value="Previous") }}]({{ target.nav_prev.permalink }})
 {%- endif %}
-{%- if target.nav_prev and parent %} | {% endif %}
-{%- if parent %}
-&#8679; [{{ parent.title | default(value="Up") }}]({{ parent.permalink }})
+{%- if target.nav_prev and has_parent %} | {% endif %}
+{%- if has_parent %}
+&#8679; [{{ parent.title | default(value="Home") }}]({{ parent.permalink }})
 {%- endif %}
-{%- if target.nav_next and (target.nav_prev or parent) %} | {% endif %}
+{%- if target.nav_next and (target.nav_prev or has_parent) %} | {% endif %}
 {%- if target.nav_next %}
 [{{ target.nav_next.title | default(value="Next") }}]({{ target.nav_next.permalink }}) &#8658;
 {%- endif %}

@@ -8,5 +8,5 @@
 #}
 {%- set target = page | default(value=section) -%}
 {%- if target.nav_ancestors %}
-@ {% for a in target.nav_ancestors %}[{{ a.title | default(value="…") }}]({{ a.permalink }}){% if not loop.last %} → {% endif %}{% endfor %} ↴
+@ {%- for a in target.nav_ancestors %}{%- if a.title or loop.first %}{% if not loop.first %} → {% endif %}[{{ a.title | default(value="Home") }}]({{ a.permalink }}){%- endif %}{%- endfor %} ↴
 {%- endif %}

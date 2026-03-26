@@ -109,7 +109,11 @@ impl Section {
             .map(|p| p.to_string())
             .filter(|p| !p.is_empty())
             .collect::<Vec<_>>();
-        section.permalink = config.make_permalink(&section.path);
+        section.permalink = if config.is_in_render_md_mode() {
+            format!("{}/{}", config.base_url.trim_end_matches('/'), section.file.relative.replace("_index.md", "index.md"))
+        } else {
+            config.make_permalink(&section.path)
+        };
         Ok(section)
     }
 

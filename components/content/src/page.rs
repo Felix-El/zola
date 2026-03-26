@@ -178,7 +178,11 @@ impl Page {
             .map(|p| p.to_string())
             .filter(|p| !p.is_empty())
             .collect::<Vec<_>>();
-        page.permalink = config.make_permalink(&page.path);
+        page.permalink = if config.is_in_render_md_mode() {
+            format!("{}/{}", config.base_url.trim_end_matches('/'), page.file.relative.replace("_index.md", "index.md"))
+        } else {
+            config.make_permalink(&page.path)
+        };
 
         Ok(page)
     }

@@ -89,14 +89,11 @@ fn ancestor_nav_items<'a>(ancestors: &[String], lib: &'a Library) -> Vec<NavItem
     ancestors
         .iter()
         .filter_map(|rel| {
-            lib.sections.values().find(|s| s.file.relative == *rel).and_then(|sec| {
-                sec.meta.title.as_ref()?; // skip untitled ancestors (e.g. root _index.md)
-                Some(NavItem {
-                    title: &sec.meta.title,
-                    permalink: &sec.permalink,
-                    is_section: true,
-                    children: vec![],
-                })
+            lib.sections.values().find(|s| s.file.relative == *rel).map(|sec| NavItem {
+                title: &sec.meta.title,
+                permalink: &sec.permalink,
+                is_section: true,
+                children: vec![],
             })
         })
         .collect()

@@ -316,19 +316,13 @@ pub(crate) fn render_md_with_meta(content: &str, context: &RenderContext) -> Res
                         Ok(resolved) => {
                             internal_links
                                 .push((resolved.md_path.clone(), resolved.anchor.clone()));
-                            if let Some(current_path) = context.current_page_path {
-                                let new_url = md_relative_path(
-                                    current_path,
-                                    &resolved.md_path,
-                                    resolved.anchor.as_deref(),
-                                );
-                                // Find the verbatim URL in the source slice for this link.
-                                let source_slice = &content[range.clone()];
-                                if let Some(pos) = source_slice.find(dest_url.as_ref()) {
-                                    let abs_start = range.start + pos;
-                                    let abs_end = abs_start + dest_url.len();
-                                    link_replacements.push((abs_start, abs_end, new_url));
-                                }
+                            // Replace @/ link with the absolute permalink so the post-processor
+                            // can convert all absolute .md URLs to document-relative in one pass.
+                            let source_slice = &content[range.clone()];
+                            if let Some(pos) = source_slice.find(dest_url.as_ref()) {
+                                let abs_start = range.start + pos;
+                                let abs_end = abs_start + dest_url.len();
+                                link_replacements.push((abs_start, abs_end, resolved.permalink));
                             }
                         }
                         Err(_) => {
