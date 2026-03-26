@@ -13,7 +13,7 @@ mod utils;
 
 pub use file_info::FileInfo;
 pub use front_matter::{PageFrontMatter, SectionFrontMatter};
-pub use library::Library;
+pub use library::{Library, NavEntry};
 pub use page::Page;
 pub use pagination::Paginator;
 pub use section::Section;

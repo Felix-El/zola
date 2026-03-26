@@ -8,6 +8,15 @@ use crate::sorting::sort_pages;
 use crate::taxonomies::{Taxonomy, TaxonomyFound};
 use crate::{Page, Section, SortBy};
 
+/// A single entry in a section's ordered navigation children list.
+#[derive(Debug, Clone)]
+pub struct NavEntry {
+    pub path: PathBuf,
+    pub is_section: bool,
+    /// The weight used for ordering (page weight defaults to 0 when None)
+    pub weight: usize,
+}
+
 macro_rules! set {
     ($($key:expr,)+) => (set!($($key),+));
 
@@ -36,6 +45,13 @@ pub struct Library {
     // So we don't need to pass the Config when adding a page to know how to slugify and we only
     // slugify once
     taxo_name_to_slug: AHashMap<String, String>,
+    /// Per-section ordered children list (weight-sorted mix of pages and subsections).
+    /// Only populated when config.generate_navigation = true.
+    pub nav_children: AHashMap<PathBuf, Vec<NavEntry>>,
+    /// Previous sibling in the parent section's nav_children order. None at boundaries.
+    pub nav_prev: AHashMap<PathBuf, Option<NavEntry>>,
+    /// Next sibling in the parent section's nav_children order. None at boundaries.
+    pub nav_next: AHashMap<PathBuf, Option<NavEntry>>,
 }
 
 impl Library {
@@ -372,6 +388,62 @@ impl Library {
 
     pub fn find_sections_by_path(&self, paths: &[PathBuf]) -> Vec<&Section> {
         paths.iter().map(|p| &self.sections[p]).collect()
+    }
+
+    /// Compute navigation metadata: nav_children, nav_prev, nav_next.
+    /// Must be called after populate_sections() and sort_section_pages().
+    /// Does nothing if config.generate_navigation is false.
+    pub fn compute_navigation(&mut self, config: &Config) {
+        if !config.generate_navigation {
+            return;
+        }
+
+        self.nav_children.clear();
+        self.nav_prev.clear();
+        self.nav_next.clear();
+
+        // Collect children for every section.
+        let section_paths: Vec<PathBuf> = self.sections.keys().cloned().collect();
+        for sec_path in &section_paths {
+            let section = &self.sections[sec_path];
+
+            let mut children: Vec<NavEntry> = Vec::new();
+
+            // Add pages
+            for page_path in &section.pages {
+                if let Some(page) = self.pages.get(page_path) {
+                    children.push(NavEntry {
+                        path: page_path.clone(),
+                        is_section: false,
+                        weight: page.meta.weight.unwrap_or(0),
+                    });
+                }
+            }
+
+            // Add subsections
+            for sub_path in &section.subsections {
+                if let Some(sub) = self.sections.get(sub_path) {
+                    children.push(NavEntry {
+                        path: sub_path.clone(),
+                        is_section: true,
+                        weight: sub.meta.weight,
+                    });
+                }
+            }
+
+            // Sort by weight, stable (preserves existing sort order within equal weights)
+            children.sort_by_key(|e| e.weight);
+
+            // Fill prev/next for each child
+            for (i, child) in children.iter().enumerate() {
+                let prev = if i > 0 { Some(children[i - 1].clone()) } else { None };
+                let next = if i + 1 < children.len() { Some(children[i + 1].clone()) } else { None };
+                self.nav_prev.insert(child.path.clone(), prev);
+                self.nav_next.insert(child.path.clone(), next);
+            }
+
+            self.nav_children.insert(sec_path.clone(), children);
+        }
     }
 }
 

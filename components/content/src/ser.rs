@@ -3,10 +3,20 @@ use std::path::Path;
 
 use serde::Serialize;
 
-use crate::library::Library;
+use crate::library::{Library, NavEntry};
 use crate::{Page, Section};
 use tera::{Map, Value};
 use utils::table_of_contents::Heading;
+
+/// Navigation node used for `nav_children`, `nav_prev`, `nav_next`, and `nav_parent`.
+/// `children` is populated only for `nav_children` tree nodes; it is empty for siblings/parent.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct NavItem<'a> {
+    pub title: &'a Option<String>,
+    pub permalink: &'a str,
+    pub is_section: bool,
+    pub children: Vec<NavItem<'a>>,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct BackLink<'a> {
@@ -37,6 +47,59 @@ fn find_backlinks<'a>(relative_path: &str, library: &'a Library) -> Vec<BackLink
         backlinks.sort_by_key(|b| b.permalink);
     }
     backlinks
+}
+
+/// Build a `NavItem` from a `NavEntry`. When `with_children` is true the tree is
+/// populated recursively (used for `nav_children`); when false `children` is always
+/// empty (used for `nav_prev`, `nav_next`, `nav_parent`).
+fn nav_item_from_entry<'a>(entry: &NavEntry, lib: &'a Library, with_children: bool) -> NavItem<'a> {
+    static NO_TITLE: Option<String> = None;
+    if entry.is_section {
+        if let Some(sec) = lib.sections.get(&entry.path) {
+            let children = if with_children {
+                lib.nav_children
+                    .get(&entry.path)
+                    .map(|kids| kids.iter().map(|e| nav_item_from_entry(e, lib, true)).collect())
+                    .unwrap_or_default()
+            } else {
+                vec![]
+            };
+            return NavItem {
+                title: &sec.meta.title,
+                permalink: &sec.permalink,
+                is_section: true,
+                children,
+            };
+        }
+    } else if let Some(page) = lib.pages.get(&entry.path) {
+        return NavItem {
+            title: &page.meta.title,
+            permalink: &page.permalink,
+            is_section: false,
+            children: vec![],
+        };
+    }
+    // Fallback (should not happen in a consistent library)
+    NavItem { title: &NO_TITLE, permalink: "", is_section: entry.is_section, children: vec![] }
+}
+
+/// Resolve each ancestor relative path (e.g. `"documentation/_index.md"`) to a flat NavItem.
+/// Sections without a title (typically the root `_index.md`) are omitted.
+fn ancestor_nav_items<'a>(ancestors: &[String], lib: &'a Library) -> Vec<NavItem<'a>> {
+    ancestors
+        .iter()
+        .filter_map(|rel| {
+            lib.sections.values().find(|s| s.file.relative == *rel).and_then(|sec| {
+                sec.meta.title.as_ref()?; // skip untitled ancestors (e.g. root _index.md)
+                Some(NavItem {
+                    title: &sec.meta.title,
+                    permalink: &sec.permalink,
+                    is_section: true,
+                    children: vec![],
+                })
+            })
+        })
+        .collect()
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -70,6 +133,10 @@ pub struct SerializingPage<'a> {
     higher: Option<Box<SerializingPage<'a>>>,
     translations: Vec<TranslatedContent<'a>>,
     backlinks: Vec<BackLink<'a>>,
+    nav_prev: Option<NavItem<'a>>,
+    nav_next: Option<NavItem<'a>>,
+    /// Ancestor chain from root down to immediate parent, for breadcrumb rendering.
+    nav_ancestors: Vec<NavItem<'a>>,
 }
 
 impl<'a> SerializingPage<'a> {
@@ -104,6 +171,23 @@ impl<'a> SerializingPage<'a> {
             backlinks = find_backlinks(&page.file.relative, lib);
         }
 
+        let (nav_prev, nav_next) = if let Some(lib) = library {
+            let prev = lib
+                .nav_prev
+                .get(&page.file.path)
+                .and_then(|e| e.as_ref())
+                .map(|e| nav_item_from_entry(e, lib, false));
+            let next = lib
+                .nav_next
+                .get(&page.file.path)
+                .and_then(|e| e.as_ref())
+                .map(|e| nav_item_from_entry(e, lib, false));
+            (prev, next)
+        } else {
+            (None, None)
+        };
+        let nav_ancestors =
+            library.map(|lib| ancestor_nav_items(&page.ancestors, lib)).unwrap_or_default();
         Self {
             relative_path: &page.file.relative,
             colocated_path: &page.file.colocated_path,
@@ -134,6 +218,9 @@ impl<'a> SerializingPage<'a> {
             higher,
             translations,
             backlinks,
+            nav_prev,
+            nav_next,
+            nav_ancestors,
         }
     }
 }
@@ -164,6 +251,11 @@ pub struct SerializingSection<'a> {
     transparent: bool,
     paginate_by: &'a Option<usize>,
     paginate_reversed: bool,
+    nav_children: Vec<NavItem<'a>>,
+    nav_prev: Option<NavItem<'a>>,
+    nav_next: Option<NavItem<'a>>,
+    /// Ancestor chain from root down to immediate parent, for breadcrumb rendering.
+    nav_ancestors: Vec<NavItem<'a>>,
 }
 
 #[derive(Debug)]
@@ -205,6 +297,34 @@ impl<'a> SerializingSection<'a> {
             }
         }
 
+        let (nav_children, nav_prev, nav_next) = match &mode {
+            SectionSerMode::ForMarkdown => (vec![], None, None),
+            SectionSerMode::MetadataOnly(lib) | SectionSerMode::Full(lib) => {
+                let children = lib
+                    .nav_children
+                    .get(&section.file.path)
+                    .map(|kids| kids.iter().map(|e| nav_item_from_entry(e, lib, true)).collect())
+                    .unwrap_or_default();
+                let prev = lib
+                    .nav_prev
+                    .get(&section.file.path)
+                    .and_then(|e| e.as_ref())
+                    .map(|e| nav_item_from_entry(e, lib, false));
+                let next = lib
+                    .nav_next
+                    .get(&section.file.path)
+                    .and_then(|e| e.as_ref())
+                    .map(|e| nav_item_from_entry(e, lib, false));
+                (children, prev, next)
+            }
+        };
+        let nav_ancestors = match &mode {
+            SectionSerMode::ForMarkdown => vec![],
+            SectionSerMode::MetadataOnly(lib) | SectionSerMode::Full(lib) => {
+                ancestor_nav_items(&section.ancestors, lib)
+            }
+        };
+
         Self {
             relative_path: &section.file.relative,
             colocated_path: &section.file.colocated_path,
@@ -230,6 +350,10 @@ impl<'a> SerializingSection<'a> {
             backlinks,
             paginate_by: &section.meta.paginate_by,
             paginate_reversed: section.meta.paginate_reversed,
+            nav_children,
+            nav_prev,
+            nav_next,
+            nav_ancestors,
         }
     }
 }

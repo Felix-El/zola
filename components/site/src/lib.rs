@@ -635,6 +635,7 @@ impl Site {
     pub fn populate_sections(&mut self) {
         let mut library = self.library.write().expect("Get lock for populate_sections");
         library.populate_sections(&self.config, &self.content_path);
+        library.compute_navigation(&self.config);
     }
 
     /// Find all the tags and categories if it's asked in the config

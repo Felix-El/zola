@@ -4,4 +4,24 @@
 {% block doc_content %}
     <h1>{{page.title}}</h1>
     {{page.content | safe}}
+    {% set page_nav_parent = page.nav_ancestors | last %}
+    {% if page.nav_prev or page_nav_parent or page.nav_next %}
+    <nav class="page-nav" aria-label="Page navigation">
+        {% if page.nav_prev %}
+        <a class="page-nav__prev" href="{{ page.nav_prev.permalink }}">
+            &#8656; {{ page.nav_prev.title | default(value="Previous") }}
+        </a>
+        {% endif %}
+        {% if page_nav_parent %}
+        <a class="page-nav__up" href="{{ page_nav_parent.permalink }}">
+            &#8679; {{ page_nav_parent.title | default(value="Up") }}
+        </a>
+        {% endif %}
+        {% if page.nav_next %}
+        <a class="page-nav__next" href="{{ page.nav_next.permalink }}">
+            {{ page.nav_next.title | default(value="Next") }} &#8658;
+        </a>
+        {% endif %}
+    </nav>
+    {% endif %}
 {% endblock doc_content %}

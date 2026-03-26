@@ -4,6 +4,7 @@ description = "Everything you need to make a static site engine in one binary."
 
 compile_sass = true
 build_search_index = true
+generate_navigation = true
 
 taxonomies = [
   { name = "theme-tags"}

@@ -118,6 +118,9 @@ pub struct Config {
     pub generate_robots_txt: bool,
     /// Whether to exclude paginated pages in sitemap; can take values "none", "all"
     pub exclude_paginated_pages_in_sitemap: ExcludePaginatedPagesInSitemap,
+    /// Whether to compute navigation metadata (nav_children, nav_prev, nav_next, nav_ancestors)
+    /// for all pages and sections. Defaults to false.
+    pub generate_navigation: bool,
 }
 
 #[derive(Serialize)]
@@ -141,6 +144,7 @@ pub struct SerializedConfig<'a> {
     generate_sitemap: bool,
     generate_robots_txt: bool,
     exclude_paginated_pages_in_sitemap: ExcludePaginatedPagesInSitemap,
+    generate_navigation: bool,
 }
 
 impl Config {
@@ -380,6 +384,7 @@ impl Config {
             generate_sitemap: self.generate_sitemap,
             generate_robots_txt: self.generate_robots_txt,
             exclude_paginated_pages_in_sitemap: self.exclude_paginated_pages_in_sitemap,
+            generate_navigation: self.generate_navigation,
         }
     }
 }
@@ -452,6 +457,7 @@ impl Default for Config {
             generate_sitemap: true,
             generate_robots_txt: true,
             exclude_paginated_pages_in_sitemap: ExcludePaginatedPagesInSitemap::None,
+            generate_navigation: false,
         }
     }
 }
